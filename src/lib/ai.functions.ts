@@ -29,6 +29,15 @@ async function callGateway(system: string, user: string): Promise<string | null>
   return json.choices?.[0]?.message?.content ?? null;
 }
 
+type Loose = Record<string, unknown>;
+const str = (v: unknown, fb = "") => (typeof v === "string" ? v : fb);
+const list = (v: unknown) => (Array.isArray(v) ? v.filter((x) => typeof x === "string") as string[] : []);
+const prio = (v: unknown) => (v === "high" || v === "low" ? v : "medium") as "high" | "medium" | "low";
+
+export const getAiMode = createServerFn({ method: "GET" }).handler(async () => ({
+  live: Boolean(process.env["LOVABLE_API_KEY"]),
+}));
+
 const MeetingInput = z.object({ transcript: z.string().min(1), title: z.string().default("") });
 
 export const summarizeMeeting = createServerFn({ method: "POST" })
@@ -41,8 +50,25 @@ export const summarizeMeeting = createServerFn({ method: "POST" })
         `Title: ${data.title}\n\nTranscript:\n${data.transcript.slice(0, 20000)}`,
       );
       if (!raw) return fallback;
-      const parsed = JSON.parse(raw) as Record<string, unknown>;
-      return { ...fallback, ...parsed, title: fallback.title, transcript: data.transcript, demo: false };
+      const p = JSON.parse(raw) as Loose;
+      const items = Array.isArray(p["actionItems"]) ? (p["actionItems"] as Loose[]) : [];
+      return {
+        ...fallback,
+        summary: str(p["summary"], fallback.summary),
+        keyPoints: list(p["keyPoints"]),
+        decisions: list(p["decisions"]),
+        risks: list(p["risks"]),
+        actionItems: items.map((a) => ({
+          title: str(a["title"]).slice(0, 160),
+          owner: str(a["owner"], "Unassigned"),
+          due: /^\d{4}-\d{2}-\d{2}$/.test(str(a["due"])) ? str(a["due"]) : "",
+          priority: prio(a["priority"]),
+          estimateMins: typeof a["estimateMins"] === "number" ? a["estimateMins"] : 45,
+        })).filter((a) => a.title),
+        title: fallback.title,
+        transcript: data.transcript,
+        demo: false,
+      };
     } catch (error) {
       console.error(error);
       return fallback;
@@ -67,8 +93,28 @@ export const runResearch = createServerFn({ method: "POST" })
           : `Research question: ${data.query}`,
       );
       if (!raw) return fallback;
-      const parsed = JSON.parse(raw) as Record<string, unknown>;
-      return { ...fallback, ...parsed, kind: data.kind, query: data.query, demo: false };
+      const p = JSON.parse(raw) as Loose;
+      const findings = Array.isArray(p["findings"]) ? (p["findings"] as Loose[]) : [];
+      const sources = Array.isArray(p["sources"]) ? (p["sources"] as Loose[]) : [];
+      return {
+        ...fallback,
+        overview: str(p["overview"], fallback.overview),
+        findings: findings
+          .map((f) => ({
+            claim: str(f["claim"]),
+            detail: str(f["detail"]),
+            confidence: (f["confidence"] === "high" || f["confidence"] === "low"
+              ? f["confidence"]
+              : "medium") as "high" | "medium" | "low",
+          }))
+          .filter((f) => f.claim),
+        openQuestions: list(p["openQuestions"]),
+        nextSteps: list(p["nextSteps"]),
+        sources: sources.map((s2) => ({ label: str(s2["label"], "Source"), note: str(s2["note"]) })),
+        kind: data.kind,
+        query: data.query,
+        demo: false,
+      };
     } catch (error) {
       console.error(error);
       return fallback;
