@@ -8,7 +8,11 @@ import {
   ShieldCheck,
   Sparkles,
 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { useState, type ReactNode } from "react";
+
+import { getAiMode } from "@/lib/ai.functions";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -44,6 +48,13 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
 
 export function AppShell({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
+  const aiMode = useServerFn(getAiMode);
+  const { data } = useQuery({
+    queryKey: ["ai-mode"],
+    queryFn: () => aiMode({}),
+    staleTime: Infinity,
+  });
+  const live = data?.live ?? false;
 
   return (
     <div className="min-h-screen bg-background">
@@ -71,7 +82,11 @@ export function AppShell({ children }: { children: ReactNode }) {
             <NavLinks />
           </nav>
 
-          <Badge className="ml-auto bg-cyan text-cyan-foreground md:ml-2">Demo mode</Badge>
+          <Badge
+            className={`ml-auto md:ml-2 ${live ? "bg-success text-white" : "bg-cyan text-cyan-foreground"}`}
+          >
+            {live ? "Live AI" : "Demo mode"}
+          </Badge>
 
           <Sheet open={open} onOpenChange={setOpen}>
             <SheetTrigger asChild>
@@ -103,9 +118,19 @@ export function AppShell({ children }: { children: ReactNode }) {
       <footer className="border-t bg-card">
         <div className="mx-auto max-w-6xl px-4 py-6 text-sm text-muted-foreground">
           <p>
-            WorkFlow AI runs in <strong>demo mode</strong>: results come from an on-device
-            heuristic engine unless an AI provider is configured server-side. Always review AI
-            output before acting on it.
+            {live ? (
+              <>
+                WorkFlow AI is connected to a server-side AI provider (keys never reach your
+                browser). Prioritization and scheduling always run on-device. Always review AI
+                output before acting on it.
+              </>
+            ) : (
+              <>
+                WorkFlow AI runs in <strong>demo mode</strong>: results come from an on-device
+                heuristic engine unless an AI provider is configured server-side. Always review AI
+                output before acting on it.
+              </>
+            )}
           </p>
           <p className="mt-2">
             <Link to="/about" className="font-medium text-primary underline underline-offset-4">
